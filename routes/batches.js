@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, beginTransaction, commit, rollback, run } = require('../config/database');
+const { db, beginTransaction, commit, rollback, run, all } = require('../config/database');
 const Formula = require('../models/Formula');
 const BatchPlan = require('../models/BatchPlan');
 const ProductBatch = require('../models/ProductBatch');
@@ -10,6 +10,7 @@ const BatchOptimizer = require('../services/BatchOptimizer');
 const Reservation = require('../models/Reservation');
 const ReservationEvent = require('../models/ReservationEvent');
 const CompatibilityService = require('../services/CompatibilityService');
+const ExecutionSnapshot = require('../models/ExecutionSnapshot');
 
 router.get('/plans', async (req, res) => {
   try {
@@ -238,6 +239,22 @@ router.post('/execute', async (req, res) => {
         });
       }
 
+      const materialTypesInPlan = [...new Set(materialUsages.map(u => u.material_type))];
+      const preDeductionSnapshot = {};
+      for (const mt of materialTypesInPlan) {
+        const batchesOfType = await all(`
+          SELECT id, batch_number, remaining_quantity
+          FROM material_batches
+          WHERE material_type = ? AND status = '合格' AND expiry_date >= date('now')
+          ORDER BY remaining_quantity DESC
+        `, [mt]);
+        preDeductionSnapshot[mt] = batchesOfType.map(b => ({
+          material_batch_id: b.id,
+          batch_number: b.batch_number,
+          remaining_quantity: b.remaining_quantity
+        }));
+      }
+
       for (const usage of materialUsages) {
         const decreaseResult = await run(`
           UPDATE material_batches 
@@ -287,6 +304,8 @@ router.post('/execute', async (req, res) => {
           JSON.stringify(paramSnapshot)
         ]);
       }
+
+      await ExecutionSnapshot.create(productBatchId, preDeductionSnapshot);
 
       await run(`
         UPDATE batch_plans SET status = 'executed' WHERE id = ?

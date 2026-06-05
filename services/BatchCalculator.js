@@ -9,7 +9,7 @@ const TIME_LIMIT_MS = 3000;
 
 class BatchCalculator {
   static async calculatePlan(formula, plannedQuantity, options = {}) {
-    const { useCheapestBatches = false } = options;
+    const { useCheapestBatches = false, customInventory = null, ignoreReservations = false } = options;
     const startTime = Date.now();
     const result = {
       success: false,
@@ -42,7 +42,7 @@ class BatchCalculator {
         minQuantity,
         maxQuantity,
         startTime,
-        { useCheapestBatches }
+        { useCheapestBatches, customInventory, ignoreReservations }
       );
 
       if (!rowResult.success) {
@@ -74,7 +74,7 @@ class BatchCalculator {
             subMinQuantity,
             subMaxQuantity,
             startTime,
-            { useCheapestBatches }
+            { useCheapestBatches, customInventory, ignoreReservations }
           );
 
           if (subResult.success) {
@@ -136,7 +136,7 @@ class BatchCalculator {
   }
 
   static async _calculateRow(row, requiredQuantity, minQuantity, maxQuantity, startTime, options = {}) {
-    const { useCheapestBatches = false } = options;
+    const { useCheapestBatches = false, customInventory = null, ignoreReservations = false } = options;
     const result = {
       success: false,
       row_index: row.row_index,
@@ -150,7 +150,20 @@ class BatchCalculator {
       cost: 0
     };
 
-    const candidates = await MaterialBatch.findByType(row.material_type, false, false, '合格');
+    let candidates;
+    if (customInventory && customInventory[row.material_type]) {
+      candidates = [];
+      for (const snap of customInventory[row.material_type]) {
+        const fullBatch = await MaterialBatch.findById(snap.material_batch_id);
+        if (fullBatch && fullBatch.status === '合格') {
+          fullBatch.remaining_quantity = snap.remaining_quantity;
+          fullBatch.available_quantity = snap.remaining_quantity;
+          candidates.push(fullBatch);
+        }
+      }
+    } else {
+      candidates = await MaterialBatch.findByType(row.material_type, false, false, '合格');
+    }
     
     if (candidates.length === 0) {
       result.issues.push({
@@ -160,11 +173,13 @@ class BatchCalculator {
       return result;
     }
 
-    const batchIds = candidates.map(c => c.id);
-    const reservedMap = await Reservation.getReservedQuantityMap(batchIds);
-    for (const candidate of candidates) {
-      const reserved = reservedMap[candidate.id] || 0;
-      candidate.available_quantity = Math.max(0, candidate.remaining_quantity - reserved);
+    if (!customInventory && !ignoreReservations) {
+      const batchIds = candidates.map(c => c.id);
+      const reservedMap = await Reservation.getReservedQuantityMap(batchIds);
+      for (const candidate of candidates) {
+        const reserved = reservedMap[candidate.id] || 0;
+        candidate.available_quantity = Math.max(0, candidate.remaining_quantity - reserved);
+      }
     }
 
     let sortedCandidates;

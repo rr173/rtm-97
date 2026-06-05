@@ -370,6 +370,30 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_batch_compatibility_a ON batch_compatibility(batch_a_id);
     CREATE INDEX IF NOT EXISTS idx_batch_compatibility_b ON batch_compatibility(batch_b_id);
     CREATE INDEX IF NOT EXISTS idx_batch_compatibility_pair ON batch_compatibility(batch_a_id, batch_b_id);
+
+    CREATE TABLE IF NOT EXISTS execution_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_batch_id INTEGER NOT NULL,
+      snapshot_data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_batch_id) REFERENCES product_batches(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_execution_snapshots_product_batch ON execution_snapshots(product_batch_id);
+
+    CREATE TABLE IF NOT EXISTS retro_analysis_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_batch_id INTEGER NOT NULL UNIQUE,
+      qc_report_id INTEGER NOT NULL,
+      would_pass INTEGER NOT NULL DEFAULT 0,
+      conclusion TEXT NOT NULL CHECK(conclusion IN ('had_better_option', 'no_better_option', 'actual_was_optimal')),
+      analysis_data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_batch_id) REFERENCES product_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (qc_report_id) REFERENCES qc_reports(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retro_analysis_conclusion ON retro_analysis_results(conclusion);
   `);
 
   await migrateDispositionOrdersStatus();

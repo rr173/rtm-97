@@ -56,7 +56,7 @@ class ProductBatch {
 
   static async getMaterials(productBatchId) {
     const materials = await all(`
-      SELECT pbm.*, mb.batch_number, mb.supplier, mb.receive_date, mb.expiry_date
+      SELECT pbm.*, mb.batch_number, mb.supplier, mb.receive_date, mb.expiry_date, mb.unit_price
       FROM product_batch_materials pbm
       JOIN material_batches mb ON pbm.material_batch_id = mb.id
       WHERE pbm.product_batch_id = ?

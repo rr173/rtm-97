@@ -4,6 +4,7 @@ const QCReport = require('../models/QCReport');
 const DispositionRule = require('../models/DispositionRule');
 const DispositionOrder = require('../models/DispositionOrder');
 const MaterialLock = require('../models/MaterialLock');
+const RetroAnalysisService = require('../services/RetroAnalysisService');
 
 router.post('/inspect', async (req, res) => {
   try {
@@ -64,6 +65,24 @@ router.post('/inspect', async (req, res) => {
       response.locked_material_count = lockedMaterials.filter(
         m => m.source_disposition_order_id === response.disposition_order?.id
       ).length;
+
+      try {
+        const retroAnalysis = await RetroAnalysisService.analyze(
+          report.product_batch_id,
+          report.id
+        );
+        response.retro_analysis = retroAnalysis;
+      } catch (retroErr) {
+        console.error('回溯分析失败:', retroErr.message);
+        response.retro_analysis = {
+          error: retroErr.message,
+          actual_plan: null,
+          optimal_plan: null,
+          optimal_estimated_params: null,
+          would_pass: null,
+          conclusion: 'analysis_failed'
+        };
+      }
     }
 
     res.status(201).json(response);
@@ -512,6 +531,47 @@ router.get('/locked-materials', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/retroanalyze/stats', async (req, res) => {
+  try {
+    const stats = await RetroAnalysisService.getStats();
+    res.json({
+      success: true,
+      stats: stats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/retroanalyze/:productBatchId', async (req, res) => {
+  try {
+    const productBatchId = req.params.productBatchId;
+    const analysis = await RetroAnalysisService.getAnalysis(productBatchId);
+
+    const conclusionTexts = {
+      'had_better_option': '当时有更好的投料组合可以避免不合格，但未被选中',
+      'no_better_option': '当时库存中没有能够做出合格成品的投料组合',
+      'actual_was_optimal': '实际采用的方案就是当时最优的选择',
+      'analysis_failed': '回溯分析失败'
+    };
+
+    res.json({
+      success: true,
+      actual_plan: analysis.actual_plan,
+      optimal_plan: analysis.optimal_plan,
+      optimal_estimated_params: analysis.optimal_estimated_params,
+      would_pass: analysis.would_pass,
+      conclusion: analysis.conclusion,
+      conclusion_text: conclusionTexts[analysis.conclusion] || analysis.conclusion,
+      total_cost_actual: analysis.total_cost_actual,
+      total_cost_optimal: analysis.total_cost_optimal,
+      calculation_errors: analysis.calculation_errors || []
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

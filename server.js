@@ -76,8 +76,10 @@ async function startServer() {
     console.log(`  DELETE /api/batches/reservations/:planId - 取消方案预占`);
     console.log(`  GET    /api/trace/forward/:id        - 正向追溯（原料→成品）`);
   console.log(`  GET    /api/trace/backward/:id       - 反向追溯（成品→原料）`);
-  console.log(`  POST   /api/qc/inspect               - 成品质检录入`);
-  console.log(`  GET    /api/qc/reports               - 查询质检报告`);
+  console.log(`  POST   /api/qc/inspect               - 成品质检录入（不合格时自动触发回溯分析）`);
+    console.log(`  GET    /api/qc/retroanalyze/:id      - 回溯分析某成品批次`);
+    console.log(`  GET    /api/qc/retroanalyze/stats    - 回溯分析统计`);
+    console.log(`  GET    /api/qc/reports               - 查询质检报告`);
   console.log(`  GET    /api/qc/dispositions          - 查询处置工单`);
   console.log(`  POST   /api/qc/dispositions/:id/approve - 审批处置工单`);
   console.log(`  POST   /api/qc/dispositions/:id/reject  - 驳回处置工单`);
