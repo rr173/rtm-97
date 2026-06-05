@@ -235,8 +235,18 @@ async function initDatabase() {
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'executed', 'expired', 'cancelled')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       expires_at DATETIME NOT NULL,
+      renew_count INTEGER DEFAULT 0,
       FOREIGN KEY (plan_id) REFERENCES batch_plans(id),
       FOREIGN KEY (material_batch_id) REFERENCES material_batches(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reservation_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL CHECK(event_type IN ('created', 'renewed', 'expired', 'cancelled', 'executed')),
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      operator TEXT NOT NULL DEFAULT 'system',
+      FOREIGN KEY (plan_id) REFERENCES batch_plans(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_incoming_reports_batch ON incoming_reports(material_batch_id);
@@ -262,6 +272,10 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_contraindications_type_a ON contraindications(type_a);
     CREATE INDEX IF NOT EXISTS idx_contraindications_type_b ON contraindications(type_b);
     CREATE INDEX IF NOT EXISTS idx_contraindications_level ON contraindications(level);
+
+    CREATE INDEX IF NOT EXISTS idx_reservation_events_plan ON reservation_events(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_reservation_events_type ON reservation_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_reservation_events_occurred ON reservation_events(occurred_at);
 
     CREATE TABLE IF NOT EXISTS env_readings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -306,6 +320,8 @@ async function initDatabase() {
   await migrateMaterialBatchesStatus();
   await migrateBatchPlansStatus();
   await migrateMaterialBatchesUnitPrice();
+  await migrateReservationsRenewCount();
+  await migrateReservationEventsTable();
 
   console.log('数据库初始化完成');
 }
@@ -425,6 +441,42 @@ async function migrateMaterialBatchesUnitPrice() {
     }
   } catch (err) {
     console.error('  迁移 material_batches 表失败:', err.message);
+  }
+}
+
+async function migrateReservationsRenewCount() {
+  try {
+    const row = await get("SELECT sql FROM sqlite_master WHERE type='table' AND name='reservations'");
+    if (row && row.sql && !row.sql.includes('renew_count')) {
+      await exec(`ALTER TABLE reservations ADD COLUMN renew_count INTEGER DEFAULT 0`);
+      console.log('  已迁移 reservations 表: 新增 renew_count 字段');
+    }
+  } catch (err) {
+    console.error('  迁移 reservations 表失败:', err.message);
+  }
+}
+
+async function migrateReservationEventsTable() {
+  try {
+    const row = await get("SELECT sql FROM sqlite_master WHERE type='table' AND name='reservation_events'");
+    if (!row) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS reservation_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          plan_id INTEGER NOT NULL,
+          event_type TEXT NOT NULL CHECK(event_type IN ('created', 'renewed', 'expired', 'cancelled', 'executed')),
+          occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          operator TEXT NOT NULL DEFAULT 'system',
+          FOREIGN KEY (plan_id) REFERENCES batch_plans(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_reservation_events_plan ON reservation_events(plan_id);
+        CREATE INDEX IF NOT EXISTS idx_reservation_events_type ON reservation_events(event_type);
+        CREATE INDEX IF NOT EXISTS idx_reservation_events_occurred ON reservation_events(occurred_at);
+      `);
+      console.log('  已创建 reservation_events 表');
+    }
+  } catch (err) {
+    console.error('  创建 reservation_events 表失败:', err.message);
   }
 }
 

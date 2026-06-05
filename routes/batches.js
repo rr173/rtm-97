@@ -7,6 +7,7 @@ const ProductBatch = require('../models/ProductBatch');
 const MaterialBatch = require('../models/MaterialBatch');
 const BatchCalculator = require('../services/BatchCalculator');
 const Reservation = require('../models/Reservation');
+const ReservationEvent = require('../models/ReservationEvent');
 
 router.get('/plans', async (req, res) => {
   try {
@@ -27,6 +28,12 @@ router.get('/plans/:uuid', async (req, res) => {
 
     const reservations = await Reservation.findByPlanId(plan.id);
     plan.reservations = reservations;
+
+    const remainingSeconds = await Reservation.getPlanRemainingSeconds(plan.id);
+    plan.remaining_seconds = remainingSeconds;
+
+    const renewCount = await Reservation.getPlanRenewCount(plan.id);
+    plan.renew_count = renewCount;
 
     res.json(plan);
   } catch (err) {
@@ -95,6 +102,8 @@ router.post('/plan', async (req, res) => {
       }
 
       await Reservation.createBatch(planResult.id, reservationItems);
+
+      await ReservationEvent.create(planResult.id, 'created', 'system');
 
       await commit();
     } catch (err) {
@@ -310,19 +319,68 @@ router.get('/reservations', async (req, res) => {
 router.delete('/reservations/:planId', async (req, res) => {
   try {
     const planId = req.params.planId;
+    const operator = req.body.operator || 'system';
 
     const plan = await BatchPlan.findByUuid(planId) || await BatchPlan.findById(planId);
     if (!plan) {
       return res.status(404).json({ error: '方案不存在' });
     }
 
-    const result = await Reservation.cancelByPlanId(plan.id);
+    const result = await Reservation.cancelByPlanId(plan.id, operator);
 
     res.json({
       success: true,
       plan_id: plan.plan_uuid,
       cancelled_count: result.changes,
       message: result.changes > 0 ? '已取消该方案的全部预占' : '该方案没有活跃的预占'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/reservations/:planId/renew', async (req, res) => {
+  try {
+    const planId = req.params.planId;
+    const operator = req.body.operator || 'system';
+
+    const plan = await BatchPlan.findByUuid(planId) || await BatchPlan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ error: '方案不存在' });
+    }
+
+    const result = await Reservation.renew(plan.id, operator);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      expires_at: result.expires_at,
+      renew_count: result.renew_count,
+      remaining_seconds: result.remaining_seconds,
+      message: '续期成功'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/reservations/:planId/events', async (req, res) => {
+  try {
+    const planId = req.params.planId;
+
+    const plan = await BatchPlan.findByUuid(planId) || await BatchPlan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ error: '方案不存在' });
+    }
+
+    const events = await ReservationEvent.findByPlanId(plan.id);
+
+    res.json({
+      plan_id: plan.plan_uuid,
+      events: events
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
