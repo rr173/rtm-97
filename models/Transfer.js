@@ -100,6 +100,12 @@ class Transfer {
         reason
       ]);
 
+      await run(`
+        UPDATE material_batches 
+        SET remaining_quantity = remaining_quantity - ?
+        WHERE id = ?
+      `, [quantity, source_batch_id]);
+
       const transfer = await this.findByTransferNumber(transferNumber);
       await commit();
       return transfer;
@@ -163,15 +169,6 @@ class Transfer {
       throw new Error('只能审批待审批的调拨记录');
     }
 
-    const sourceBatch = await MaterialBatch.findById(transfer.source_batch_id);
-    if (!sourceBatch) {
-      throw new Error('源批次不存在');
-    }
-
-    if (sourceBatch.remaining_quantity < transfer.quantity) {
-      throw new Error('源批次剩余量不足，无法审批通过');
-    }
-
     await beginTransaction();
     try {
       await run(`
@@ -179,12 +176,6 @@ class Transfer {
         SET status = 'approved', approver = ?, approved_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `, [approver, id]);
-
-      await run(`
-        UPDATE material_batches 
-        SET remaining_quantity = remaining_quantity - ?
-        WHERE id = ?
-      `, [transfer.quantity, transfer.source_batch_id]);
 
       await run(`
         UPDATE material_batches 
@@ -223,6 +214,12 @@ class Transfer {
           SET status = 'rejected', approver = ?, approved_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `, [approver, id]);
+
+        await run(`
+          UPDATE material_batches 
+          SET remaining_quantity = remaining_quantity + ?
+          WHERE id = ?
+        `, [transfer.quantity, transfer.source_batch_id]);
 
         await run(`
           DELETE FROM material_params WHERE material_batch_id = ?
