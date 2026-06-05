@@ -12,14 +12,15 @@ class MaterialBatch {
       expiry_date,
       params,
       status = '合格',
-      unit_price
+      unit_price,
+      parent_batch_id = null
     } = data;
 
     const result = await run(`
       INSERT INTO material_batches 
       (material_type, batch_number, total_quantity, remaining_quantity, 
-       supplier, receive_date, expiry_date, status, unit_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       supplier, receive_date, expiry_date, status, unit_price, parent_batch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       material_type,
       batch_number,
@@ -29,7 +30,8 @@ class MaterialBatch {
       receive_date,
       expiry_date,
       status,
-      unit_price
+      unit_price,
+      parent_batch_id
     ]);
 
     const batchId = result.lastID;
@@ -44,6 +46,10 @@ class MaterialBatch {
     return batchId;
   }
 
+  static async createWithParent(data) {
+    return this.create(data);
+  }
+
   static async findById(id) {
     const batch = await get('SELECT * FROM material_batches WHERE id = ?', [id]);
     if (!batch) return null;
@@ -51,6 +57,15 @@ class MaterialBatch {
     batch.params = await this.getParams(id);
     const MaterialLock = require('./MaterialLock');
     batch.lock_status = await MaterialLock.getLockStatusForBatch(id);
+    
+    if (batch.parent_batch_id) {
+      const parentBatch = await get(
+        'SELECT id, batch_number, material_type FROM material_batches WHERE id = ?',
+        [batch.parent_batch_id]
+      );
+      batch.parent_batch = parentBatch || null;
+    }
+    
     return batch;
   }
 

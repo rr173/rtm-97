@@ -43,7 +43,9 @@ async function initDatabase() {
       expiry_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT '待检' CHECK(status IN ('待检', '合格', '拒收')),
       unit_price REAL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      parent_batch_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_batch_id) REFERENCES material_batches(id)
     );
 
     CREATE TABLE IF NOT EXISTS material_params (
@@ -277,6 +279,29 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_reservation_events_type ON reservation_events(event_type);
     CREATE INDEX IF NOT EXISTS idx_reservation_events_occurred ON reservation_events(occurred_at);
 
+    CREATE TABLE IF NOT EXISTS transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transfer_number TEXT NOT NULL UNIQUE,
+      source_batch_id INTEGER NOT NULL,
+      new_batch_id INTEGER,
+      quantity REAL NOT NULL,
+      destination_line TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      approver TEXT,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'return_error')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      approved_at DATETIME,
+      FOREIGN KEY (source_batch_id) REFERENCES material_batches(id),
+      FOREIGN KEY (new_batch_id) REFERENCES material_batches(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_transfers_status ON transfers(status);
+    CREATE INDEX IF NOT EXISTS idx_transfers_source_batch ON transfers(source_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_transfers_new_batch ON transfers(new_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_transfers_destination ON transfers(destination_line);
+    CREATE INDEX IF NOT EXISTS idx_material_batches_parent ON material_batches(parent_batch_id);
+
     CREATE TABLE IF NOT EXISTS env_readings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_batch_number TEXT NOT NULL,
@@ -322,6 +347,8 @@ async function initDatabase() {
   await migrateMaterialBatchesUnitPrice();
   await migrateReservationsRenewCount();
   await migrateReservationEventsTable();
+  await migrateMaterialBatchesParentBatchId();
+  await migrateTransfersTable();
 
   console.log('数据库初始化完成');
 }
@@ -477,6 +504,52 @@ async function migrateReservationEventsTable() {
     }
   } catch (err) {
     console.error('  创建 reservation_events 表失败:', err.message);
+  }
+}
+
+async function migrateMaterialBatchesParentBatchId() {
+  try {
+    const row = await get("SELECT sql FROM sqlite_master WHERE type='table' AND name='material_batches'");
+    if (row && row.sql && !row.sql.includes('parent_batch_id')) {
+      await exec(`ALTER TABLE material_batches ADD COLUMN parent_batch_id INTEGER`);
+      await exec(`CREATE INDEX IF NOT EXISTS idx_material_batches_parent ON material_batches(parent_batch_id)`);
+      console.log('  已迁移 material_batches 表: 新增 parent_batch_id 字段');
+    }
+  } catch (err) {
+    console.error('  迁移 material_batches parent_batch_id 失败:', err.message);
+  }
+}
+
+async function migrateTransfersTable() {
+  try {
+    const row = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='transfers'");
+    if (!row) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS transfers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          transfer_number TEXT NOT NULL UNIQUE,
+          source_batch_id INTEGER NOT NULL,
+          new_batch_id INTEGER,
+          quantity REAL NOT NULL,
+          destination_line TEXT NOT NULL,
+          operator TEXT NOT NULL,
+          approver TEXT,
+          reason TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'return_error')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          approved_at DATETIME,
+          FOREIGN KEY (source_batch_id) REFERENCES material_batches(id),
+          FOREIGN KEY (new_batch_id) REFERENCES material_batches(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_transfers_status ON transfers(status);
+        CREATE INDEX IF NOT EXISTS idx_transfers_source_batch ON transfers(source_batch_id);
+        CREATE INDEX IF NOT EXISTS idx_transfers_new_batch ON transfers(new_batch_id);
+        CREATE INDEX IF NOT EXISTS idx_transfers_destination ON transfers(destination_line);
+      `);
+      console.log('  已创建 transfers 表');
+    }
+  } catch (err) {
+    console.error('  创建 transfers 表失败:', err.message);
   }
 }
 

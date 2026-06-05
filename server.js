@@ -46,6 +46,7 @@ async function startServer() {
   app.use('/api/suppliers', require('./routes/suppliers'));
   app.use('/api/contraindications', require('./routes/contraindications'));
   app.use('/api/env', require('./routes/env'));
+  app.use('/api/transfers', require('./routes/transfers'));
 
   app.use((req, res) => {
     res.status(404).json({ error: '接口不存在' });
@@ -97,6 +98,14 @@ async function startServer() {
     console.log(`  GET    /api/env/process-window        - 获取工艺窗口配置`);
     console.log(`  PUT    /api/env/process-window/:param - 修改某参数工艺窗口`);
     console.log(`  GET    /api/env/deviations            - 查询环境偏差事件(需传product_batch)`);
+    console.log(`  POST   /api/transfers                 - 创建调拨记录`);
+    console.log(`  GET    /api/transfers                 - 查询调拨列表(支持?status=过滤)`);
+    console.log(`  GET    /api/transfers/stats           - 调拨统计`);
+    console.log(`  GET    /api/transfers/:id             - 查询调拨详情`);
+    console.log(`  POST   /api/transfers/:id/approve     - 审批调拨`);
+    console.log(`  POST   /api/transfers/:id/reject      - 驳回调拨`);
+    console.log(`  GET    /api/transfers/:batchId/history - 批次调拨链路`);
+    console.log(`  GET    /api/transfers/batch/:id/available - 批次可用量查询`);
     console.log(`\n快速测试命令:`);
     console.log(`  curl -X POST http://localhost:${PORT}/api/batches/plan \\\n    -H "Content-Type: application/json" \\\n    -d '{"formula_id":1,"planned_quantity":500}'`);
     console.log();

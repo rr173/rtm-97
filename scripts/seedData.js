@@ -5,6 +5,7 @@ const SubstitutionRule = require('../models/SubstitutionRule');
 const DispositionRule = require('../models/DispositionRule');
 const StrictInspectionParam = require('../models/StrictInspectionParam');
 const Contraindication = require('../models/Contraindication');
+const Transfer = require('../models/Transfer');
 
 function getFutureDate(daysFromNow) {
   const date = new Date();
@@ -25,7 +26,8 @@ async function seedData() {
     substitution_rules: 0,
     disposition_rules: 0,
     strict_params: 0,
-    contraindications: 0
+    contraindications: 0,
+    transfers: 0
   };
 
   const existingFormulas = await get('SELECT COUNT(*) as count FROM formulas');
@@ -408,13 +410,45 @@ async function seedData() {
     console.log('[配伍禁忌模块] 已有数据，跳过');
   }
 
+  const existingTransfers = await get('SELECT COUNT(*) as count FROM transfers');
+  if (existingTransfers.count === 0) {
+    console.log('\n[调拨模块] 无数据，开始加载演示数据...');
+    
+    const sourceBatch = await get(
+      "SELECT id, batch_number FROM material_batches WHERE batch_number = 'EP-A-2025-001'"
+    );
+    
+    if (sourceBatch) {
+      try {
+        const transfer = await Transfer.create({
+          source_batch_id: sourceBatch.id,
+          quantity: 200,
+          destination_line: '二号线',
+          operator: '张三',
+          reason: '产线A原料富余，调拨到产线B使用'
+        });
+        
+        await Transfer.approve(transfer.id, '李四');
+        console.log('  ✓ 创建调拨演示数据: EP-A-2025-001 → 二号线 (200kg，已审批)');
+        stats.transfers = 1;
+      } catch (err) {
+        console.error('  ✗ 创建调拨演示数据失败:', err.message);
+      }
+    } else {
+      console.log('  - 未找到源批次 EP-A-2025-001，跳过调拨演示数据');
+    }
+  } else {
+    console.log('[调拨模块] 已有数据，跳过');
+  }
+
   const finalStats = {
     formulas: stats.formulas > 0 ? stats.formulas : existingFormulas.count,
     materials: stats.materials > 0 ? stats.materials : existingMaterials.count,
     substitution_rules: stats.substitution_rules > 0 ? stats.substitution_rules : existingSubRules.count,
     disposition_rules: stats.disposition_rules > 0 ? stats.disposition_rules : existingDispRules.count,
     strict_params: stats.strict_params > 0 ? stats.strict_params : existingStrictParams.count,
-    contraindications: stats.contraindications > 0 ? stats.contraindications : existingContraindications.count
+    contraindications: stats.contraindications > 0 ? stats.contraindications : existingContraindications.count,
+    transfers: stats.transfers > 0 ? stats.transfers : existingTransfers.count
   };
 
   console.log('\n========================================');
@@ -427,6 +461,7 @@ async function seedData() {
   console.log(`  处置规则: ${finalStats.disposition_rules} 条`);
   console.log(`  加严检验配置: ${finalStats.strict_params} 条`);
   console.log(`  配伍禁忌: ${finalStats.contraindications} 条`);
+  console.log(`  调拨记录: ${finalStats.transfers} 条`);
   console.log('========================================\n');
 }
 

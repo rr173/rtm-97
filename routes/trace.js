@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const MaterialBatch = require('../models/MaterialBatch');
 const ProductBatch = require('../models/ProductBatch');
+const Transfer = require('../models/Transfer');
 
 router.get('/forward/:materialBatchId', async (req, res) => {
   try {
@@ -57,6 +58,24 @@ router.get('/backward/:productBatchId', async (req, res) => {
 
     const materials = await ProductBatch.getMaterials(productBatch.id);
 
+    const materialsWithTransferInfo = [];
+    for (const m of materials) {
+      const transferInfo = await Transfer.getTransferInfoForBatch(m.material_batch_id);
+      materialsWithTransferInfo.push({
+        material_batch_id: m.material_batch_id,
+        batch_number: m.batch_number,
+        material_type: m.material_type,
+        formula_row_id: m.formula_row_id,
+        quantity_used: m.quantity_used,
+        is_substitute: m.is_substitute === 1,
+        supplier: m.supplier,
+        receive_date: m.receive_date,
+        expiry_date: m.expiry_date,
+        param_snapshot: m.param_snapshot,
+        transfer_info: transferInfo
+      });
+    }
+
     res.json({
       success: true,
       product_batch: {
@@ -68,18 +87,7 @@ router.get('/backward/:productBatchId', async (req, res) => {
         operator: productBatch.operator,
         total_yield: productBatch.total_yield
       },
-      materials_used: materials.map(m => ({
-        material_batch_id: m.material_batch_id,
-        batch_number: m.batch_number,
-        material_type: m.material_type,
-        formula_row_id: m.formula_row_id,
-        quantity_used: m.quantity_used,
-        is_substitute: m.is_substitute === 1,
-        supplier: m.supplier,
-        receive_date: m.receive_date,
-        expiry_date: m.expiry_date,
-        param_snapshot: m.param_snapshot
-      }))
+      materials_used: materialsWithTransferInfo
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
