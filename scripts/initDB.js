@@ -353,6 +353,23 @@ async function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_shelf_life_rules_type ON shelf_life_rules(material_type);
     CREATE INDEX IF NOT EXISTS idx_shelf_life_rules_param ON shelf_life_rules(param_name);
+
+    CREATE TABLE IF NOT EXISTS batch_compatibility (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_a_id INTEGER NOT NULL,
+      batch_b_id INTEGER NOT NULL,
+      score REAL NOT NULL CHECK(score >= 0 AND score <= 100),
+      source TEXT NOT NULL CHECK(source IN ('manual', 'auto')),
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (batch_a_id) REFERENCES material_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (batch_b_id) REFERENCES material_batches(id) ON DELETE CASCADE,
+      UNIQUE(batch_a_id, batch_b_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_batch_compatibility_a ON batch_compatibility(batch_a_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_compatibility_b ON batch_compatibility(batch_b_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_compatibility_pair ON batch_compatibility(batch_a_id, batch_b_id);
   `);
 
   await migrateDispositionOrdersStatus();

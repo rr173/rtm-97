@@ -9,6 +9,7 @@ const BatchCalculator = require('../services/BatchCalculator');
 const BatchOptimizer = require('../services/BatchOptimizer');
 const Reservation = require('../models/Reservation');
 const ReservationEvent = require('../models/ReservationEvent');
+const CompatibilityService = require('../services/CompatibilityService');
 
 router.get('/plans', async (req, res) => {
   try {
@@ -56,6 +57,11 @@ router.post('/plan', async (req, res) => {
     }
 
     const calculationResult = await BatchCalculator.calculatePlan(formula, planned_quantity);
+
+    let compatibilityWarnings = [];
+    if (calculationResult.success) {
+      compatibilityWarnings = await CompatibilityService.checkRowCompatibility(calculationResult.rows);
+    }
 
     if (!calculationResult.success) {
       if (calculationResult.contraindication_blocked) {
@@ -126,7 +132,8 @@ router.post('/plan', async (req, res) => {
       calculation_time_ms: calculationResult.calculation_time_ms,
       reservations: reservations,
       reservation_expires_at: reservations.length > 0 ? reservations[0].expires_at : null,
-      warnings: calculationResult.contraindication_warnings || []
+      warnings: calculationResult.contraindication_warnings || [],
+      compatibility_warnings: compatibilityWarnings
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

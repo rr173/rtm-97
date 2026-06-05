@@ -48,6 +48,7 @@ async function startServer() {
   app.use('/api/env', require('./routes/env'));
   app.use('/api/transfers', require('./routes/transfers'));
   app.use('/api/shelf-life', require('./routes/shelf-life'));
+  app.use('/api/compatibility', require('./routes/compatibility'));
 
   app.use((req, res) => {
     res.status(404).json({ error: '接口不存在' });
@@ -113,6 +114,11 @@ async function startServer() {
     console.log(`  GET    /api/shelf-life/assess/:batchId - 评估指定批次`);
     console.log(`  POST   /api/shelf-life/schedule       - 生成消耗排程`);
     console.log(`  GET    /api/shelf-life/alerts         - 获取浪费预警列表`);
+    console.log(`  POST   /api/compatibility/records     - 录入批次兼容性记录`);
+    console.log(`  GET    /api/compatibility/records     - 查询兼容性记录(支持?batch_id=过滤)`);
+    console.log(`  GET    /api/compatibility/matrix      - 获取某类型批次兼容性矩阵(含推断值)`);
+    console.log(`  POST   /api/compatibility/predict     - 预测多批次混合兼容性`);
+    console.log(`  GET    /api/compatibility/pair/:a/:b  - 查询两个批次的兼容性`);
     console.log(`\n快速测试命令:`);
     console.log(`  curl -X POST http://localhost:${PORT}/api/batches/plan \\\n    -H "Content-Type: application/json" \\\n    -d '{"formula_id":1,"planned_quantity":500}'`);
     console.log();

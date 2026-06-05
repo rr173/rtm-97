@@ -7,6 +7,7 @@ const StrictInspectionParam = require('../models/StrictInspectionParam');
 const Contraindication = require('../models/Contraindication');
 const Transfer = require('../models/Transfer');
 const ShelfLifeRule = require('../models/ShelfLifeRule');
+const BatchCompatibility = require('../models/BatchCompatibility');
 
 function getFutureDate(daysFromNow) {
   const date = new Date();
@@ -474,6 +475,69 @@ async function seedData() {
     console.log('[保质期衰减规则模块] 已有数据，跳过');
   }
 
+  const existingCompatibilityRecords = await get('SELECT COUNT(*) as count FROM batch_compatibility');
+  if (existingCompatibilityRecords.count === 0 && allMaterialCount.count > 0) {
+    console.log('\n[批次兼容性模块] 无数据，开始加载预置记录...');
+    
+    const epoxyBatch1 = await get("SELECT id FROM material_batches WHERE batch_number = 'EP-A-2025-001'");
+    const epoxyBatch2 = await get("SELECT id FROM material_batches WHERE batch_number = 'EP-A-2025-002'");
+    const epoxyModifiedBatch = await get("SELECT id FROM material_batches WHERE batch_number = 'EP-A-M-2025-001'");
+    const curingBatch1 = await get("SELECT id FROM material_batches WHERE batch_number = 'CU-B-2025-001'");
+    const curingBatch2 = await get("SELECT id FROM material_batches WHERE batch_number = 'CU-B-2025-002'");
+
+    const compatibilityRecords = [
+      {
+        batch_a_id: epoxyBatch1?.id,
+        batch_b_id: epoxyBatch2?.id,
+        score: 85,
+        source: 'manual',
+        notes: '环氧树脂A两个批次混合测试良好，无凝胶现象'
+      },
+      {
+        batch_a_id: epoxyBatch1?.id,
+        batch_b_id: epoxyModifiedBatch?.id,
+        score: 35,
+        source: 'manual',
+        notes: '环氧树脂A与改性批次混合后pH差异导致分层，不建议混合'
+      },
+      {
+        batch_a_id: epoxyBatch2?.id,
+        batch_b_id: epoxyModifiedBatch?.id,
+        score: 45,
+        source: 'auto',
+        notes: '系统自动检测：两批次粘度差异较大，存在风险'
+      },
+      {
+        batch_a_id: curingBatch1?.id,
+        batch_b_id: curingBatch2?.id,
+        score: 92,
+        source: 'manual',
+        notes: '固化剂B两个批次来自同一供应商，兼容性极佳'
+      },
+      {
+        batch_a_id: epoxyBatch1?.id,
+        batch_b_id: curingBatch1?.id,
+        score: 78,
+        source: 'auto',
+        notes: '跨类型批次混合，反应速率正常'
+      }
+    ];
+
+    for (const record of compatibilityRecords) {
+      if (record.batch_a_id && record.batch_b_id) {
+        try {
+          await BatchCompatibility.create(record);
+          console.log(`  ✓ 创建兼容性记录: 批次${record.batch_a_id} + 批次${record.batch_b_id} = ${record.score}分`);
+          stats.compatibility_records = (stats.compatibility_records || 0) + 1;
+        } catch (err) {
+          console.error(`  ✗ 创建兼容性记录失败:`, err.message);
+        }
+      }
+    }
+  } else if (existingCompatibilityRecords.count > 0) {
+    console.log(`[批次兼容性模块] 已有${existingCompatibilityRecords.count}条记录，跳过`);
+  }
+
   const finalStats = {
     formulas: stats.formulas > 0 ? stats.formulas : existingFormulas.count,
     materials: stats.materials > 0 ? stats.materials : existingMaterials.count,
@@ -482,7 +546,8 @@ async function seedData() {
     strict_params: stats.strict_params > 0 ? stats.strict_params : existingStrictParams.count,
     contraindications: stats.contraindications > 0 ? stats.contraindications : existingContraindications.count,
     transfers: stats.transfers > 0 ? stats.transfers : existingTransfers.count,
-    shelf_life_rules: stats.shelf_life_rules > 0 ? stats.shelf_life_rules : existingShelfLifeRules.count
+    shelf_life_rules: stats.shelf_life_rules > 0 ? stats.shelf_life_rules : existingShelfLifeRules.count,
+    compatibility_records: stats.compatibility_records || existingCompatibilityRecords.count
   };
 
   console.log('\n========================================');
@@ -497,6 +562,7 @@ async function seedData() {
   console.log(`  配伍禁忌: ${finalStats.contraindications} 条`);
   console.log(`  调拨记录: ${finalStats.transfers} 条`);
   console.log(`  保质期衰减规则: ${finalStats.shelf_life_rules} 条`);
+  console.log(`  批次兼容性记录: ${finalStats.compatibility_records} 条`);
   console.log('========================================\n');
 }
 
