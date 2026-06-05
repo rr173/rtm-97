@@ -448,6 +448,22 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_auction_trades_seller ON auction_trades(seller_line);
     CREATE INDEX IF NOT EXISTS idx_auction_trades_buyer ON auction_trades(buyer_line);
     CREATE INDEX IF NOT EXISTS idx_auction_trades_traded ON auction_trades(traded_at);
+
+    CREATE TABLE IF NOT EXISTS auction_agents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      buyer_line TEXT NOT NULL,
+      material_type TEXT NOT NULL,
+      max_price REAL NOT NULL,
+      max_quantity_per_day REAL NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0 AND priority <= 100),
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(buyer_line, material_type)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auction_agents_enabled ON auction_agents(enabled);
+    CREATE INDEX IF NOT EXISTS idx_auction_agents_material ON auction_agents(material_type);
+    CREATE INDEX IF NOT EXISTS idx_auction_agents_buyer ON auction_agents(buyer_line);
   `);
 
   await migrateDispositionOrdersStatus();
@@ -459,6 +475,8 @@ async function initDatabase() {
   await migrateMaterialBatchesParentBatchId();
   await migrateTransfersTable();
   await migrateAuctionTables();
+  await migrateAuctionBidsSource();
+  await migrateAuctionAgentsTable();
 
   console.log('数据库初始化完成');
 }
@@ -698,12 +716,17 @@ async function migrateAuctionTables() {
           buyer_line TEXT NOT NULL,
           operator TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+          source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual', 'auto')),
+          agent_id INTEGER,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (listing_id) REFERENCES auction_listings(id) ON DELETE CASCADE
+          FOREIGN KEY (listing_id) REFERENCES auction_listings(id) ON DELETE CASCADE,
+          FOREIGN KEY (agent_id) REFERENCES auction_agents(id)
         );
         CREATE INDEX IF NOT EXISTS idx_auction_bids_listing ON auction_bids(listing_id);
         CREATE INDEX IF NOT EXISTS idx_auction_bids_status ON auction_bids(status);
         CREATE INDEX IF NOT EXISTS idx_auction_bids_buyer ON auction_bids(buyer_line);
+        CREATE INDEX IF NOT EXISTS idx_auction_bids_source ON auction_bids(source);
+        CREATE INDEX IF NOT EXISTS idx_auction_bids_agent ON auction_bids(agent_id);
       `);
       console.log('  已创建 auction_bids 表');
     }
@@ -735,6 +758,48 @@ async function migrateAuctionTables() {
     }
   } catch (err) {
     console.error('  创建拍卖相关表失败:', err.message);
+  }
+}
+
+async function migrateAuctionBidsSource() {
+  try {
+    const row = await get("SELECT sql FROM sqlite_master WHERE type='table' AND name='auction_bids'");
+    if (row && row.sql && !row.sql.includes('source')) {
+      await exec(`ALTER TABLE auction_bids ADD COLUMN source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual', 'auto'))`);
+      await exec(`ALTER TABLE auction_bids ADD COLUMN agent_id INTEGER`);
+      await exec(`CREATE INDEX IF NOT EXISTS idx_auction_bids_source ON auction_bids(source)`);
+      await exec(`CREATE INDEX IF NOT EXISTS idx_auction_bids_agent ON auction_bids(agent_id)`);
+      console.log('  已迁移 auction_bids 表: 新增 source 和 agent_id 字段');
+    }
+  } catch (err) {
+    console.error('  迁移 auction_bids source 字段失败:', err.message);
+  }
+}
+
+async function migrateAuctionAgentsTable() {
+  try {
+    const row = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='auction_agents'");
+    if (!row) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS auction_agents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          buyer_line TEXT NOT NULL,
+          material_type TEXT NOT NULL,
+          max_price REAL NOT NULL,
+          max_quantity_per_day REAL NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0 AND priority <= 100),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(buyer_line, material_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auction_agents_enabled ON auction_agents(enabled);
+        CREATE INDEX IF NOT EXISTS idx_auction_agents_material ON auction_agents(material_type);
+        CREATE INDEX IF NOT EXISTS idx_auction_agents_buyer ON auction_agents(buyer_line);
+      `);
+      console.log('  已创建 auction_agents 表');
+    }
+  } catch (err) {
+    console.error('  创建 auction_agents 表失败:', err.message);
   }
 }
 

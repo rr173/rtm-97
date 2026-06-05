@@ -8,6 +8,7 @@ const seedData = require('./scripts/seedData');
 const Reservation = require('./models/Reservation');
 const { EnvProcessWindow } = require('./models/EnvMonitor');
 const AuctionListing = require('./models/AuctionListing');
+const AuctionAgent = require('./models/AuctionAgent');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,9 @@ async function startServer() {
 
   await EnvProcessWindow.initializeDefaults();
   console.log('工艺窗口配置初始化完成');
+
+  await AuctionAgent.seedDefaults();
+  console.log('竞价代理策略初始化完成');
 
   app.get('/api/health', (req, res) => {
     res.json({ 
@@ -130,6 +134,14 @@ async function startServer() {
     console.log(`  POST   /api/auction/listings/:id/accept - 接受某个出价(成交)`);
     console.log(`  GET    /api/auction/trades            - 查询所有交易记录`);
     console.log(`  GET    /api/auction/trades/stats      - 交易统计数据`);
+    console.log(`  POST   /api/auction/agents            - 创建竞价代理策略`);
+    console.log(`  GET    /api/auction/agents            - 查询所有策略(支持?buyer_line=过滤)`);
+    console.log(`  GET    /api/auction/agents/:id        - 查询策略详情`);
+    console.log(`  PUT    /api/auction/agents/:id        - 修改策略`);
+    console.log(`  DELETE /api/auction/agents/:id        - 删除策略`);
+    console.log(`  POST   /api/auction/agents/:id/pause  - 暂停策略`);
+    console.log(`  POST   /api/auction/agents/:id/resume - 恢复策略`);
+    console.log(`  GET    /api/auction/agents/:id/quota  - 查询今日限额使用情况`);
     console.log(`\n快速测试命令:`);
     console.log(`  curl -X POST http://localhost:${PORT}/api/batches/plan \\\n    -H "Content-Type: application/json" \\\n    -d '{"formula_id":1,"planned_quantity":500}'`);
     console.log();
