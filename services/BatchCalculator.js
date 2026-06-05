@@ -8,14 +8,16 @@ const MAX_CANDIDATE_BATCHES = 5;
 const TIME_LIMIT_MS = 3000;
 
 class BatchCalculator {
-  static async calculatePlan(formula, plannedQuantity) {
+  static async calculatePlan(formula, plannedQuantity, options = {}) {
+    const { useCheapestBatches = false } = options;
     const startTime = Date.now();
     const result = {
       success: false,
       rows: [],
       estimated_product_params: {},
       errors: [],
-      calculation_time_ms: 0
+      calculation_time_ms: 0,
+      total_cost: 0
     };
 
     if (formula.rows.length > 12) {
@@ -39,7 +41,8 @@ class BatchCalculator {
         requiredQuantity,
         minQuantity,
         maxQuantity,
-        startTime
+        startTime,
+        { useCheapestBatches }
       );
 
       if (!rowResult.success) {
@@ -70,7 +73,8 @@ class BatchCalculator {
             subRequiredQuantity,
             subMinQuantity,
             subMaxQuantity,
-            startTime
+            startTime,
+            { useCheapestBatches }
           );
 
           if (subResult.success) {
@@ -78,6 +82,9 @@ class BatchCalculator {
             subResult.batches.forEach(b => b.correction_factor = sub.correction_factor);
             subResult.material_type = sub.substitute_type;
             subResult.original_type = row.material_type;
+            subResult.cost = subResult.batches.reduce((sum, b) => 
+              sum + b.quantity * (b.unit_price || 0), 0);
+            result.total_cost += subResult.cost;
             result.rows.push(subResult);
             substituted = true;
             break;
@@ -94,6 +101,9 @@ class BatchCalculator {
         }
       } else {
         rowResult.batches.forEach(b => b.is_substitute = false);
+        rowResult.cost = rowResult.batches.reduce((sum, b) => 
+          sum + b.quantity * (b.unit_price || 0), 0);
+        result.total_cost += rowResult.cost;
         result.rows.push(rowResult);
       }
     }
@@ -125,7 +135,8 @@ class BatchCalculator {
     return result;
   }
 
-  static async _calculateRow(row, requiredQuantity, minQuantity, maxQuantity, startTime) {
+  static async _calculateRow(row, requiredQuantity, minQuantity, maxQuantity, startTime, options = {}) {
+    const { useCheapestBatches = false } = options;
     const result = {
       success: false,
       row_index: row.row_index,
@@ -135,7 +146,8 @@ class BatchCalculator {
       max_quantity: maxQuantity,
       batches: [],
       mixed_param_value: null,
-      issues: []
+      issues: [],
+      cost: 0
     };
 
     const candidates = await MaterialBatch.findByType(row.material_type, false, false, '合格');
@@ -155,7 +167,12 @@ class BatchCalculator {
       candidate.available_quantity = Math.max(0, candidate.remaining_quantity - reserved);
     }
 
-    const sortedCandidates = this._sortCandidatesByParamDistance(candidates, row);
+    let sortedCandidates;
+    if (useCheapestBatches) {
+      sortedCandidates = this._sortCandidatesByPrice(candidates);
+    } else {
+      sortedCandidates = this._sortCandidatesByParamDistance(candidates, row);
+    }
     const topCandidates = sortedCandidates.slice(0, MAX_CANDIDATE_BATCHES);
 
     const singleBatchResult = this._trySingleBatch(
@@ -163,7 +180,8 @@ class BatchCalculator {
       requiredQuantity,
       minQuantity,
       maxQuantity,
-      row
+      row,
+      useCheapestBatches
     );
 
     if (singleBatchResult) {
@@ -179,7 +197,8 @@ class BatchCalculator {
       minQuantity,
       maxQuantity,
       row,
-      startTime
+      startTime,
+      useCheapestBatches
     );
 
     if (multiBatchResult) {
@@ -191,6 +210,15 @@ class BatchCalculator {
 
     result.issues = this._analyzeIssues(topCandidates, requiredQuantity, row);
     return result;
+  }
+
+  static _sortCandidatesByPrice(candidates) {
+    return [...candidates].sort((a, b) => {
+      const priceA = a.unit_price || 0;
+      const priceB = b.unit_price || 0;
+      if (priceA !== priceB) return priceA - priceB;
+      return b.available_quantity - a.available_quantity;
+    });
   }
 
   static _sortCandidatesByParamDistance(candidates, row) {
@@ -224,14 +252,15 @@ class BatchCalculator {
     });
   }
 
-  static _trySingleBatch(candidates, requiredQuantity, minQuantity, maxQuantity, row) {
+  static _trySingleBatch(candidates, requiredQuantity, minQuantity, maxQuantity, row, skipParamCheck = false) {
     for (const candidate of candidates) {
       if (candidate.available_quantity < minQuantity) continue;
       
       const paramValue = candidate.params[row.param_name];
-      if (paramValue === undefined || paramValue === null) continue;
-      
-      if (!this._isParamInRange(paramValue, row)) continue;
+      if (!skipParamCheck) {
+        if (paramValue === undefined || paramValue === null) continue;
+        if (!this._isParamInRange(paramValue, row)) continue;
+      }
 
       const takeQuantity = Math.min(candidate.available_quantity, maxQuantity);
       if (takeQuantity < minQuantity) continue;
@@ -242,7 +271,8 @@ class BatchCalculator {
           batch_number: candidate.batch_number,
           material_type: candidate.material_type,
           quantity: takeQuantity,
-          param_value: paramValue
+          param_value: paramValue,
+          unit_price: candidate.unit_price
         }],
         mixedParam: paramValue
       };
@@ -250,11 +280,12 @@ class BatchCalculator {
     return null;
   }
 
-  static _tryMultipleBatches(candidates, requiredQuantity, minQuantity, maxQuantity, row, startTime) {
+  static _tryMultipleBatches(candidates, requiredQuantity, minQuantity, maxQuantity, row, startTime, skipParamCheck = false) {
     const availableCandidates = candidates.filter(c => {
+      if (c.available_quantity <= 0) return false;
+      if (skipParamCheck) return true;
       const paramValue = c.params[row.param_name];
-      return c.available_quantity > 0 && 
-             paramValue !== undefined && 
+      return paramValue !== undefined && 
              paramValue !== null &&
              this._isParamInRange(paramValue, row);
     });
@@ -281,7 +312,8 @@ class BatchCalculator {
           requiredQuantity,
           minQuantity,
           maxQuantity,
-          row
+          row,
+          skipParamCheck
         );
 
         if (allocation) {
@@ -293,7 +325,7 @@ class BatchCalculator {
     return null;
   }
 
-  static _allocateQuantities(batches, requiredQuantity, minQuantity, maxQuantity, row) {
+  static _allocateQuantities(batches, requiredQuantity, minQuantity, maxQuantity, row, skipParamCheck = false) {
     const paramName = row.param_name;
     
     const totalAvailable = batches.reduce((sum, b) => sum + b.available_quantity, 0);
@@ -309,11 +341,12 @@ class BatchCalculator {
     const ratios = quantities.map(q => q / totalQty);
     const finalQuantities = ratios.map(r => r * targetTotal);
 
-    const weightedParam = finalQuantities.reduce((sum, q, i) => {
-      return sum + q * batches[i].params[paramName];
+    const weightedParam = skipParamCheck ? null : finalQuantities.reduce((sum, q, i) => {
+      const paramVal = batches[i].params[paramName];
+      return paramVal !== undefined && paramVal !== null ? sum + q * paramVal : sum;
     }, 0) / targetTotal;
 
-    if (!this._isParamInRange(weightedParam, row)) {
+    if (!skipParamCheck && !this._isParamInRange(weightedParam, row)) {
       return null;
     }
 
@@ -323,7 +356,8 @@ class BatchCalculator {
         batch_number: batches[i].batch_number,
         material_type: batches[i].material_type,
         quantity: Math.round(q * 1000) / 1000,
-        param_value: batches[i].params[paramName]
+        param_value: batches[i].params[paramName],
+        unit_price: batches[i].unit_price
       })),
       mixedParam: weightedParam
     };

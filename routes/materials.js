@@ -54,7 +54,8 @@ router.post('/batches', async (req, res) => {
       supplier,
       receive_date,
       expiry_date,
-      params
+      params,
+      unit_price
     } = req.body;
 
     if (!material_type || !batch_number || total_quantity === undefined ||
@@ -71,6 +72,10 @@ router.post('/batches', async (req, res) => {
       return res.status(400).json({ error: '数量不能为负数' });
     }
 
+    if (unit_price !== undefined && unit_price < 0) {
+      return res.status(400).json({ error: '单价不能为负数' });
+    }
+
     const id = await MaterialBatch.create({
       material_type,
       batch_number,
@@ -79,7 +84,8 @@ router.post('/batches', async (req, res) => {
       supplier,
       receive_date,
       expiry_date,
-      params
+      params,
+      unit_price
     });
 
     const batch = await MaterialBatch.findById(id);

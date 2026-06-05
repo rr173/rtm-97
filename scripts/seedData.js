@@ -167,7 +167,8 @@ async function seedData() {
         supplier: '化工原料有限公司',
         receive_date: getPastDate(30),
         expiry_date: getFutureDate(335),
-        params: { purity: 99.5, viscosity: 4200, ph: 7.2 }
+        params: { purity: 99.5, viscosity: 4200, ph: 7.2 },
+        unit_price: 45
       },
       {
         material_type: '环氧树脂A',
@@ -177,7 +178,8 @@ async function seedData() {
         supplier: '化工原料有限公司',
         receive_date: getPastDate(15),
         expiry_date: getFutureDate(350),
-        params: { purity: 99.3, viscosity: 4500, ph: 7.0 }
+        params: { purity: 99.3, viscosity: 4500, ph: 7.0 },
+        unit_price: 47
       },
       {
         material_type: '环氧树脂A-改',
@@ -187,7 +189,8 @@ async function seedData() {
         supplier: '新材料科技公司',
         receive_date: getPastDate(10),
         expiry_date: getFutureDate(355),
-        params: { purity: 99.6, viscosity: 4000, ph: 7.1 }
+        params: { purity: 99.6, viscosity: 4000, ph: 7.1 },
+        unit_price: 52
       },
       {
         material_type: '固化剂B',
@@ -197,7 +200,8 @@ async function seedData() {
         supplier: '固化剂专业厂',
         receive_date: getPastDate(20),
         expiry_date: getFutureDate(345),
-        params: { purity: 99.0, viscosity: 4000, ph: 8.5 }
+        params: { purity: 99.0, viscosity: 4000, ph: 8.5 },
+        unit_price: 38
       },
       {
         material_type: '固化剂B',
@@ -207,7 +211,8 @@ async function seedData() {
         supplier: '固化剂专业厂',
         receive_date: getPastDate(5),
         expiry_date: getFutureDate(360),
-        params: { purity: 99.2, viscosity: 3800, ph: 8.3 }
+        params: { purity: 99.2, viscosity: 3800, ph: 8.3 },
+        unit_price: 40
       },
       {
         material_type: '稀释剂C',
@@ -217,7 +222,8 @@ async function seedData() {
         supplier: '溶剂化工公司',
         receive_date: getPastDate(25),
         expiry_date: getFutureDate(340),
-        params: { purity: 99.8, viscosity: 100, ph: 7.0 }
+        params: { purity: 99.8, viscosity: 100, ph: 7.0 },
+        unit_price: 15
       },
       {
         material_type: '稀释剂C',
@@ -227,7 +233,8 @@ async function seedData() {
         supplier: '溶剂化工公司',
         receive_date: getPastDate(8),
         expiry_date: getFutureDate(357),
-        params: { purity: 99.7, viscosity: 95, ph: 7.2 }
+        params: { purity: 99.7, viscosity: 95, ph: 7.2 },
+        unit_price: 16
       },
       {
         material_type: '促进剂D',
@@ -237,7 +244,8 @@ async function seedData() {
         supplier: '助剂生产厂',
         receive_date: getPastDate(12),
         expiry_date: getFutureDate(353),
-        params: { purity: 98.5, melting_point: 85 }
+        params: { purity: 98.5, melting_point: 85 },
+        unit_price: 120
       },
       {
         material_type: '促进剂D',
@@ -247,7 +255,8 @@ async function seedData() {
         supplier: '助剂生产厂',
         receive_date: getPastDate(3),
         expiry_date: getFutureDate(362),
-        params: { purity: 98.8, melting_point: 86 }
+        params: { purity: 98.8, melting_point: 86 },
+        unit_price: 125
       }
     ];
 
@@ -334,6 +343,26 @@ async function seedData() {
   if (allMaterialCount.count > 0) {
     await run("UPDATE material_batches SET status = '合格' WHERE status = '待检'");
     console.log('\n  ✓ 原料批次状态更新完成，所有批次已设为合格');
+
+    const priceUpdates = [
+      { batch_number: 'EP-A-2025-001', unit_price: 45 },
+      { batch_number: 'EP-A-2025-002', unit_price: 47 },
+      { batch_number: 'EP-A-M-2025-001', unit_price: 52 },
+      { batch_number: 'CU-B-2025-001', unit_price: 38 },
+      { batch_number: 'CU-B-2025-002', unit_price: 40 },
+      { batch_number: 'DL-C-2025-001', unit_price: 15 },
+      { batch_number: 'DL-C-2025-002', unit_price: 16 },
+      { batch_number: 'AC-D-2025-001', unit_price: 120 },
+      { batch_number: 'AC-D-2025-002', unit_price: 125 }
+    ];
+
+    for (const update of priceUpdates) {
+      await run(
+        "UPDATE material_batches SET unit_price = ? WHERE batch_number = ? AND unit_price IS NULL",
+        [update.unit_price, update.batch_number]
+      );
+    }
+    console.log('  ✓ 原料批次单价更新完成');
   }
 
   if (existingContraindications.count === 0) {

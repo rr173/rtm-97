@@ -42,6 +42,7 @@ async function initDatabase() {
       receive_date TEXT NOT NULL,
       expiry_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT '待检' CHECK(status IN ('待检', '合格', '拒收')),
+      unit_price REAL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -304,6 +305,7 @@ async function initDatabase() {
   await migrateDispositionOrdersStatus();
   await migrateMaterialBatchesStatus();
   await migrateBatchPlansStatus();
+  await migrateMaterialBatchesUnitPrice();
 
   console.log('数据库初始化完成');
 }
@@ -411,6 +413,18 @@ async function migrateBatchPlansStatus() {
     }
   } catch (err) {
     console.error('  迁移 batch_plans 表失败:', err.message);
+  }
+}
+
+async function migrateMaterialBatchesUnitPrice() {
+  try {
+    const row = await get("SELECT sql FROM sqlite_master WHERE type='table' AND name='material_batches'");
+    if (row && row.sql && !row.sql.includes('unit_price')) {
+      await exec(`ALTER TABLE material_batches ADD COLUMN unit_price REAL`);
+      console.log('  已迁移 material_batches 表: 新增 unit_price 字段');
+    }
+  } catch (err) {
+    console.error('  迁移 material_batches 表失败:', err.message);
   }
 }
 

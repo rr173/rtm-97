@@ -11,14 +11,15 @@ class MaterialBatch {
       receive_date,
       expiry_date,
       params,
-      status = '合格'
+      status = '合格',
+      unit_price
     } = data;
 
     const result = await run(`
       INSERT INTO material_batches 
       (material_type, batch_number, total_quantity, remaining_quantity, 
-       supplier, receive_date, expiry_date, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       supplier, receive_date, expiry_date, status, unit_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       material_type,
       batch_number,
@@ -27,7 +28,8 @@ class MaterialBatch {
       supplier,
       receive_date,
       expiry_date,
-      status
+      status,
+      unit_price
     ]);
 
     const batchId = result.lastID;

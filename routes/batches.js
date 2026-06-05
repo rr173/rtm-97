@@ -111,6 +111,7 @@ router.post('/plan', async (req, res) => {
       formula_id: formula_id,
       planned_quantity: planned_quantity,
       rows: calculationResult.rows,
+      total_cost: calculationResult.total_cost,
       estimated_product_params: calculationResult.estimated_product_params,
       calculation_time_ms: calculationResult.calculation_time_ms,
       reservations: reservations,
@@ -347,6 +348,53 @@ router.get('/products/:batchNumber', async (req, res) => {
     const materials = await ProductBatch.getMaterials(batch.id);
     batch.materials = materials;
     res.json(batch);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/cost-compare', async (req, res) => {
+  try {
+    const { formula_id, quantity } = req.query;
+
+    if (!formula_id || !quantity || quantity <= 0) {
+      return res.status(400).json({ error: '缺少有效的配方ID或数量' });
+    }
+
+    const formula = await Formula.findById(formula_id);
+    if (!formula) {
+      return res.status(404).json({ error: '配方不存在' });
+    }
+
+    const plannedQuantity = parseFloat(quantity);
+
+    const optimalResult = await BatchCalculator.calculatePlan(formula, plannedQuantity);
+    const cheapestResult = await BatchCalculator.calculatePlan(formula, plannedQuantity, { useCheapestBatches: true });
+
+    if (!optimalResult.success && !cheapestResult.success) {
+      return res.status(400).json({
+        error: '无法计算方案',
+        optimal_errors: optimalResult.errors,
+        cheapest_errors: cheapestResult.errors
+      });
+    }
+
+    const optimalCost = optimalResult.success ? optimalResult.total_cost : null;
+    const cheapestCost = cheapestResult.success ? cheapestResult.total_cost : null;
+
+    let premiumPercent = null;
+    if (optimalCost !== null && cheapestCost !== null && cheapestCost > 0) {
+      premiumPercent = ((optimalCost - cheapestCost) / cheapestCost) * 100;
+      premiumPercent = Math.round(premiumPercent * 100) / 100;
+    }
+
+    res.json({
+      optimal_cost: optimalCost,
+      cheapest_cost: cheapestCost,
+      premium_percent: premiumPercent,
+      optimal_success: optimalResult.success,
+      cheapest_success: cheapestResult.success
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
