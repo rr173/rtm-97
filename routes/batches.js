@@ -6,6 +6,7 @@ const BatchPlan = require('../models/BatchPlan');
 const ProductBatch = require('../models/ProductBatch');
 const MaterialBatch = require('../models/MaterialBatch');
 const BatchCalculator = require('../services/BatchCalculator');
+const BatchOptimizer = require('../services/BatchOptimizer');
 const Reservation = require('../models/Reservation');
 const ReservationEvent = require('../models/ReservationEvent');
 
@@ -453,6 +454,59 @@ router.get('/cost-compare', async (req, res) => {
       premium_percent: premiumPercent,
       optimal_success: optimalResult.success,
       cheapest_success: cheapestResult.success
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/optimize', async (req, res) => {
+  try {
+    const { formula_id, planned_quantity, weights } = req.body;
+
+    if (!formula_id || !planned_quantity || planned_quantity <= 0) {
+      return res.status(400).json({ error: '缺少有效的配方ID或计划生产量' });
+    }
+
+    if (!weights || typeof weights !== 'object') {
+      return res.status(400).json({ error: '缺少权重配置' });
+    }
+
+    const weightSum = (weights.cost || 0) + (weights.freshness || 0) + (weights.quality || 0);
+    if (Math.abs(weightSum - 1) > 0.01) {
+      return res.status(400).json({
+        error: '权重之和必须等于1（允许±0.01误差）',
+        actual_sum: weightSum
+      });
+    }
+
+    const normalizedWeights = {
+      cost: Number(weights.cost || 0),
+      freshness: Number(weights.freshness || 0),
+      quality: Number(weights.quality || 0)
+    };
+
+    const formula = await Formula.findById(formula_id);
+    if (!formula) {
+      return res.status(404).json({ error: '配方不存在' });
+    }
+
+    const result = await BatchOptimizer.optimize(formula, planned_quantity, normalizedWeights);
+
+    if (!result.solutions || result.solutions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: '无法生成可行的方案，可能原料库存不足或存在配伍禁忌',
+        calculation_time_ms: result.calculation_time_ms
+      });
+    }
+
+    res.json({
+      success: true,
+      solutions: result.solutions,
+      weights_used: result.weights_used,
+      dominated_count: result.dominated_count,
+      calculation_time_ms: result.calculation_time_ms
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
