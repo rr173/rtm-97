@@ -138,11 +138,25 @@ async function generateSchedule(formulaId, dailyProductionQuantity, planningDays
 
   const dailyMaterialRequirements = {};
   for (const row of formula.rows) {
-    dailyMaterialRequirements[row.material_type] = {
-      row_index: row.row_index,
-      standard_quantity: row.standard_quantity,
-      daily_required: (row.standard_quantity / 100) * dailyProductionQuantity
-    };
+    const rowDailyRequired = (row.standard_quantity / 100) * dailyProductionQuantity;
+    
+    if (dailyMaterialRequirements[row.material_type]) {
+      dailyMaterialRequirements[row.material_type].standard_quantity += row.standard_quantity;
+      dailyMaterialRequirements[row.material_type].daily_required += rowDailyRequired;
+      dailyMaterialRequirements[row.material_type].rows.push({
+        row_index: row.row_index,
+        standard_quantity: row.standard_quantity
+      });
+    } else {
+      dailyMaterialRequirements[row.material_type] = {
+        standard_quantity: row.standard_quantity,
+        daily_required: rowDailyRequired,
+        rows: [{
+          row_index: row.row_index,
+          standard_quantity: row.standard_quantity
+        }]
+      };
+    }
   }
 
   const materialInventories = {};
