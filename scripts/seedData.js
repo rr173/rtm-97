@@ -330,9 +330,10 @@ async function seedData() {
     console.log('[加严检验参数模块] 已有数据，跳过');
   }
 
-  if (existingMaterials.count > 0) {
+  const allMaterialCount = await get('SELECT COUNT(*) as count FROM material_batches');
+  if (allMaterialCount.count > 0) {
     await run("UPDATE material_batches SET status = '合格' WHERE status = '待检'");
-    console.log('\n  ✓ 原料批次状态向下兼容更新完成');
+    console.log('\n  ✓ 原料批次状态更新完成，所有批次已设为合格');
   }
 
   if (existingContraindications.count === 0) {
