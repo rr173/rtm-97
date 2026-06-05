@@ -6,6 +6,7 @@ const DispositionRule = require('../models/DispositionRule');
 const StrictInspectionParam = require('../models/StrictInspectionParam');
 const Contraindication = require('../models/Contraindication');
 const Transfer = require('../models/Transfer');
+const ShelfLifeRule = require('../models/ShelfLifeRule');
 
 function getFutureDate(daysFromNow) {
   const date = new Date();
@@ -27,7 +28,8 @@ async function seedData() {
     disposition_rules: 0,
     strict_params: 0,
     contraindications: 0,
-    transfers: 0
+    transfers: 0,
+    shelf_life_rules: 0
   };
 
   const existingFormulas = await get('SELECT COUNT(*) as count FROM formulas');
@@ -36,6 +38,7 @@ async function seedData() {
   const existingDispRules = await get('SELECT COUNT(*) as count FROM disposition_rules');
   const existingStrictParams = await get('SELECT COUNT(*) as count FROM strict_inspection_params');
   const existingContraindications = await get('SELECT COUNT(*) as count FROM contraindications');
+  const existingShelfLifeRules = await get('SELECT COUNT(*) as count FROM shelf_life_rules');
 
   console.log('--- 模块增量检查 ---');
   console.log(`  配方: ${existingFormulas.count} 条已存在`);
@@ -44,6 +47,7 @@ async function seedData() {
   console.log(`  处置规则: ${existingDispRules.count} 条已存在`);
   console.log(`  加严检验参数: ${existingStrictParams.count} 条已存在`);
   console.log(`  配伍禁忌: ${existingContraindications.count} 条已存在`);
+  console.log(`  保质期衰减规则: ${existingShelfLifeRules.count} 条已存在`);
   console.log('--------------------');
 
   if (existingFormulas.count === 0) {
@@ -441,6 +445,35 @@ async function seedData() {
     console.log('[调拨模块] 已有数据，跳过');
   }
 
+  if (existingShelfLifeRules.count === 0) {
+    console.log('\n[保质期衰减规则模块] 无数据，开始加载预置规则...');
+    
+    const defaultRules = [
+      {
+        material_type: '环氧树脂A',
+        param_name: 'purity',
+        decay_start_days_before_expiry: 60,
+        decay_rate_per_day: 0.01,
+        min_acceptable_value: 98.5
+      },
+      {
+        material_type: '固化剂B',
+        param_name: 'viscosity',
+        decay_start_days_before_expiry: 45,
+        decay_rate_per_day: 10,
+        min_acceptable_value: 2800
+      }
+    ];
+
+    for (const rule of defaultRules) {
+      await ShelfLifeRule.create(rule);
+      console.log(`  ✓ 创建保质期规则: ${rule.material_type} - ${rule.param_name} (到期前${rule.decay_start_days_before_expiry}天开始衰减，日衰减${rule.decay_rate_per_day}，最低${rule.min_acceptable_value})`);
+    }
+    stats.shelf_life_rules = 2;
+  } else {
+    console.log('[保质期衰减规则模块] 已有数据，跳过');
+  }
+
   const finalStats = {
     formulas: stats.formulas > 0 ? stats.formulas : existingFormulas.count,
     materials: stats.materials > 0 ? stats.materials : existingMaterials.count,
@@ -448,7 +481,8 @@ async function seedData() {
     disposition_rules: stats.disposition_rules > 0 ? stats.disposition_rules : existingDispRules.count,
     strict_params: stats.strict_params > 0 ? stats.strict_params : existingStrictParams.count,
     contraindications: stats.contraindications > 0 ? stats.contraindications : existingContraindications.count,
-    transfers: stats.transfers > 0 ? stats.transfers : existingTransfers.count
+    transfers: stats.transfers > 0 ? stats.transfers : existingTransfers.count,
+    shelf_life_rules: stats.shelf_life_rules > 0 ? stats.shelf_life_rules : existingShelfLifeRules.count
   };
 
   console.log('\n========================================');
@@ -462,6 +496,7 @@ async function seedData() {
   console.log(`  加严检验配置: ${finalStats.strict_params} 条`);
   console.log(`  配伍禁忌: ${finalStats.contraindications} 条`);
   console.log(`  调拨记录: ${finalStats.transfers} 条`);
+  console.log(`  保质期衰减规则: ${finalStats.shelf_life_rules} 条`);
   console.log('========================================\n');
 }
 

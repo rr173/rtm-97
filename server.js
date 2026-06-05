@@ -47,6 +47,7 @@ async function startServer() {
   app.use('/api/contraindications', require('./routes/contraindications'));
   app.use('/api/env', require('./routes/env'));
   app.use('/api/transfers', require('./routes/transfers'));
+  app.use('/api/shelf-life', require('./routes/shelf-life'));
 
   app.use((req, res) => {
     res.status(404).json({ error: '接口不存在' });
@@ -106,6 +107,12 @@ async function startServer() {
     console.log(`  POST   /api/transfers/:id/reject      - 驳回调拨`);
     console.log(`  GET    /api/transfers/:batchId/history - 批次调拨链路`);
     console.log(`  GET    /api/transfers/batch/:id/available - 批次可用量查询`);
+    console.log(`  GET    /api/shelf-life/rules          - 获取保质期衰减规则列表`);
+    console.log(`  POST   /api/shelf-life/rules          - 配置保质期衰减规则`);
+    console.log(`  GET    /api/shelf-life/assess         - 评估所有在库批次`);
+    console.log(`  GET    /api/shelf-life/assess/:batchId - 评估指定批次`);
+    console.log(`  POST   /api/shelf-life/schedule       - 生成消耗排程`);
+    console.log(`  GET    /api/shelf-life/alerts         - 获取浪费预警列表`);
     console.log(`\n快速测试命令:`);
     console.log(`  curl -X POST http://localhost:${PORT}/api/batches/plan \\\n    -H "Content-Type: application/json" \\\n    -d '{"formula_id":1,"planned_quantity":500}'`);
     console.log();

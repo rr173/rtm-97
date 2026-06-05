@@ -339,6 +339,20 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_env_deviations_batch ON env_deviations(product_batch_number);
     CREATE INDEX IF NOT EXISTS idx_env_deviations_param ON env_deviations(param_name);
     CREATE INDEX IF NOT EXISTS idx_env_deviations_collected_at ON env_deviations(collected_at);
+
+    CREATE TABLE IF NOT EXISTS shelf_life_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_type TEXT NOT NULL,
+      param_name TEXT NOT NULL,
+      decay_start_days INTEGER NOT NULL,
+      decay_rate REAL NOT NULL,
+      min_value REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(material_type, param_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shelf_life_rules_type ON shelf_life_rules(material_type);
+    CREATE INDEX IF NOT EXISTS idx_shelf_life_rules_param ON shelf_life_rules(param_name);
   `);
 
   await migrateDispositionOrdersStatus();
