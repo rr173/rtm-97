@@ -44,7 +44,7 @@ class Transfer {
   }
 
   static async create(data) {
-    const { source_batch_id, quantity, destination_line, operator, reason } = data;
+    const { source_batch_id, quantity, destination_line, operator, reason, status = 'pending' } = data;
 
     const sourceBatch = await MaterialBatch.findById(source_batch_id);
     if (!sourceBatch) {
@@ -66,53 +66,71 @@ class Transfer {
 
     await beginTransaction();
     try {
-      const transferNumber = await this.generateTransferNumber();
-      const newBatchNumber = await this.generateNewBatchNumber(sourceBatch.batch_number);
-
-      const newBatchData = {
-        material_type: sourceBatch.material_type,
-        batch_number: newBatchNumber,
-        total_quantity: quantity,
-        remaining_quantity: quantity,
-        supplier: sourceBatch.supplier,
-        receive_date: sourceBatch.receive_date,
-        expiry_date: sourceBatch.expiry_date,
-        params: sourceBatch.params,
-        status: '待检',
-        unit_price: sourceBatch.unit_price,
-        parent_batch_id: source_batch_id
-      };
-
-      const newBatchId = await MaterialBatch.createWithParent(newBatchData);
-
-      await run(`
-        INSERT INTO transfers (
-          transfer_number, source_batch_id, new_batch_id, quantity,
-          destination_line, operator, reason, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-      `, [
-        transferNumber,
+      const transfer = await this._createInternal({
         source_batch_id,
-        newBatchId,
         quantity,
         destination_line,
         operator,
-        reason
-      ]);
-
-      await run(`
-        UPDATE material_batches 
-        SET remaining_quantity = remaining_quantity - ?
-        WHERE id = ?
-      `, [quantity, source_batch_id]);
-
-      const transfer = await this.findByTransferNumber(transferNumber);
+        reason,
+        status,
+        sourceBatch
+      });
       await commit();
       return transfer;
     } catch (err) {
       await rollback();
       throw err;
     }
+  }
+
+  static async _createInternal(data) {
+    const { source_batch_id, quantity, destination_line, operator, reason, status = 'pending', sourceBatch } = data;
+
+    const transferNumber = await this.generateTransferNumber();
+    const newBatchNumber = await this.generateNewBatchNumber(sourceBatch.batch_number);
+    const newBatchStatus = status === 'approved' ? '合格' : '待检';
+
+    const newBatchData = {
+      material_type: sourceBatch.material_type,
+      batch_number: newBatchNumber,
+      total_quantity: quantity,
+      remaining_quantity: quantity,
+      supplier: sourceBatch.supplier,
+      receive_date: sourceBatch.receive_date,
+      expiry_date: sourceBatch.expiry_date,
+      params: sourceBatch.params,
+      status: newBatchStatus,
+      unit_price: sourceBatch.unit_price,
+      parent_batch_id: source_batch_id
+    };
+
+    const newBatchId = await MaterialBatch.createWithParent(newBatchData);
+
+    await run(`
+      INSERT INTO transfers (
+        transfer_number, source_batch_id, new_batch_id, quantity,
+        destination_line, operator, reason, status, approver, approved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      transferNumber,
+      source_batch_id,
+      newBatchId,
+      quantity,
+      destination_line,
+      operator,
+      reason,
+      status,
+      status === 'approved' ? operator : null,
+      status === 'approved' ? new Date().toISOString() : null
+    ]);
+
+    await run(`
+      UPDATE material_batches 
+      SET remaining_quantity = remaining_quantity - ?
+      WHERE id = ?
+    `, [quantity, source_batch_id]);
+
+    return await this.findByTransferNumber(transferNumber);
   }
 
   static async findById(id) {

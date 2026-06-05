@@ -8,6 +8,7 @@ const Contraindication = require('../models/Contraindication');
 const Transfer = require('../models/Transfer');
 const ShelfLifeRule = require('../models/ShelfLifeRule');
 const BatchCompatibility = require('../models/BatchCompatibility');
+const AuctionListing = require('../models/AuctionListing');
 
 function getFutureDate(daysFromNow) {
   const date = new Date();
@@ -538,6 +539,34 @@ async function seedData() {
     console.log(`[批次兼容性模块] 已有${existingCompatibilityRecords.count}条记录，跳过`);
   }
 
+  const existingAuctionListings = await get('SELECT COUNT(*) as count FROM auction_listings');
+  if (existingAuctionListings.count === 0 && allMaterialCount.count > 0) {
+    console.log('\n[拍卖模块] 无数据，开始加载预置挂单...');
+
+    const epoxyBatch2 = await get("SELECT id FROM material_batches WHERE batch_number = 'EP-A-2025-002'");
+
+    if (epoxyBatch2) {
+      try {
+        const listing = await AuctionListing.create({
+          batch_id: epoxyBatch2.id,
+          quantity: 200,
+          min_price: 42,
+          expires_days: 7,
+          seller_line: '一号线',
+          reason: '该批次快过期，产线富余，内部转让'
+        });
+        console.log(`  ✓ 创建预置挂单: EP-A-2025-002 挂200kg 底价42元 卖方:一号线 过期时间:7天后`);
+        stats.auction_listings = 1;
+      } catch (err) {
+        console.error('  ✗ 创建预置挂单失败:', err.message);
+      }
+    } else {
+      console.log('  - 未找到批次 EP-A-2025-002，跳过预置挂单');
+    }
+  } else if (existingAuctionListings.count > 0) {
+    console.log(`[拍卖模块] 已有${existingAuctionListings.count}条挂单，跳过`);
+  }
+
   const finalStats = {
     formulas: stats.formulas > 0 ? stats.formulas : existingFormulas.count,
     materials: stats.materials > 0 ? stats.materials : existingMaterials.count,
@@ -547,7 +576,8 @@ async function seedData() {
     contraindications: stats.contraindications > 0 ? stats.contraindications : existingContraindications.count,
     transfers: stats.transfers > 0 ? stats.transfers : existingTransfers.count,
     shelf_life_rules: stats.shelf_life_rules > 0 ? stats.shelf_life_rules : existingShelfLifeRules.count,
-    compatibility_records: stats.compatibility_records || existingCompatibilityRecords.count
+    compatibility_records: stats.compatibility_records || existingCompatibilityRecords.count,
+    auction_listings: stats.auction_listings || existingAuctionListings.count
   };
 
   console.log('\n========================================');
@@ -563,6 +593,7 @@ async function seedData() {
   console.log(`  调拨记录: ${finalStats.transfers} 条`);
   console.log(`  保质期衰减规则: ${finalStats.shelf_life_rules} 条`);
   console.log(`  批次兼容性记录: ${finalStats.compatibility_records} 条`);
+  console.log(`  拍卖挂单: ${finalStats.auction_listings} 条`);
   console.log('========================================\n');
 }
 

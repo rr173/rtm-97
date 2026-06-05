@@ -394,6 +394,60 @@ async function initDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_retro_analysis_conclusion ON retro_analysis_results(conclusion);
+
+    CREATE TABLE IF NOT EXISTS auction_listings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      quantity REAL NOT NULL,
+      min_price REAL NOT NULL,
+      seller_line TEXT NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'sold', 'expired', 'cancelled')),
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (batch_id) REFERENCES material_batches(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auction_listings_status ON auction_listings(status);
+    CREATE INDEX IF NOT EXISTS idx_auction_listings_batch ON auction_listings(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_auction_listings_seller ON auction_listings(seller_line);
+    CREATE INDEX IF NOT EXISTS idx_auction_listings_expires ON auction_listings(expires_at);
+
+    CREATE TABLE IF NOT EXISTS auction_bids (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      listing_id INTEGER NOT NULL,
+      price REAL NOT NULL,
+      buyer_line TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (listing_id) REFERENCES auction_listings(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auction_bids_listing ON auction_bids(listing_id);
+    CREATE INDEX IF NOT EXISTS idx_auction_bids_status ON auction_bids(status);
+    CREATE INDEX IF NOT EXISTS idx_auction_bids_buyer ON auction_bids(buyer_line);
+
+    CREATE TABLE IF NOT EXISTS auction_trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      listing_id INTEGER NOT NULL,
+      bid_id INTEGER NOT NULL,
+      batch_id INTEGER NOT NULL,
+      quantity REAL NOT NULL,
+      price REAL NOT NULL,
+      seller_line TEXT NOT NULL,
+      buyer_line TEXT NOT NULL,
+      trade_number TEXT NOT NULL UNIQUE,
+      traded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (listing_id) REFERENCES auction_listings(id),
+      FOREIGN KEY (bid_id) REFERENCES auction_bids(id),
+      FOREIGN KEY (batch_id) REFERENCES material_batches(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auction_trades_listing ON auction_trades(listing_id);
+    CREATE INDEX IF NOT EXISTS idx_auction_trades_seller ON auction_trades(seller_line);
+    CREATE INDEX IF NOT EXISTS idx_auction_trades_buyer ON auction_trades(buyer_line);
+    CREATE INDEX IF NOT EXISTS idx_auction_trades_traded ON auction_trades(traded_at);
   `);
 
   await migrateDispositionOrdersStatus();
@@ -404,6 +458,7 @@ async function initDatabase() {
   await migrateReservationEventsTable();
   await migrateMaterialBatchesParentBatchId();
   await migrateTransfersTable();
+  await migrateAuctionTables();
 
   console.log('数据库初始化完成');
 }
@@ -605,6 +660,81 @@ async function migrateTransfersTable() {
     }
   } catch (err) {
     console.error('  创建 transfers 表失败:', err.message);
+  }
+}
+
+async function migrateAuctionTables() {
+  try {
+    const listingsRow = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='auction_listings'");
+    if (!listingsRow) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS auction_listings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_id INTEGER NOT NULL,
+          quantity REAL NOT NULL,
+          min_price REAL NOT NULL,
+          seller_line TEXT NOT NULL,
+          reason TEXT,
+          status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'sold', 'expired', 'cancelled')),
+          expires_at DATETIME NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (batch_id) REFERENCES material_batches(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auction_listings_status ON auction_listings(status);
+        CREATE INDEX IF NOT EXISTS idx_auction_listings_batch ON auction_listings(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_auction_listings_seller ON auction_listings(seller_line);
+        CREATE INDEX IF NOT EXISTS idx_auction_listings_expires ON auction_listings(expires_at);
+      `);
+      console.log('  已创建 auction_listings 表');
+    }
+
+    const bidsRow = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='auction_bids'");
+    if (!bidsRow) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS auction_bids (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          listing_id INTEGER NOT NULL,
+          price REAL NOT NULL,
+          buyer_line TEXT NOT NULL,
+          operator TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (listing_id) REFERENCES auction_listings(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_auction_bids_listing ON auction_bids(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_auction_bids_status ON auction_bids(status);
+        CREATE INDEX IF NOT EXISTS idx_auction_bids_buyer ON auction_bids(buyer_line);
+      `);
+      console.log('  已创建 auction_bids 表');
+    }
+
+    const tradesRow = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='auction_trades'");
+    if (!tradesRow) {
+      await exec(`
+        CREATE TABLE IF NOT EXISTS auction_trades (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          listing_id INTEGER NOT NULL,
+          bid_id INTEGER NOT NULL,
+          batch_id INTEGER NOT NULL,
+          quantity REAL NOT NULL,
+          price REAL NOT NULL,
+          seller_line TEXT NOT NULL,
+          buyer_line TEXT NOT NULL,
+          trade_number TEXT NOT NULL UNIQUE,
+          traded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (listing_id) REFERENCES auction_listings(id),
+          FOREIGN KEY (bid_id) REFERENCES auction_bids(id),
+          FOREIGN KEY (batch_id) REFERENCES material_batches(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auction_trades_listing ON auction_trades(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_auction_trades_seller ON auction_trades(seller_line);
+        CREATE INDEX IF NOT EXISTS idx_auction_trades_buyer ON auction_trades(buyer_line);
+        CREATE INDEX IF NOT EXISTS idx_auction_trades_traded ON auction_trades(traded_at);
+      `);
+      console.log('  已创建 auction_trades 表');
+    }
+  } catch (err) {
+    console.error('  创建拍卖相关表失败:', err.message);
   }
 }
 

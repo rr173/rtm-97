@@ -7,6 +7,7 @@ const initDatabase = require('./scripts/initDB');
 const seedData = require('./scripts/seedData');
 const Reservation = require('./models/Reservation');
 const { EnvProcessWindow } = require('./models/EnvMonitor');
+const AuctionListing = require('./models/AuctionListing');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +50,7 @@ async function startServer() {
   app.use('/api/transfers', require('./routes/transfers'));
   app.use('/api/shelf-life', require('./routes/shelf-life'));
   app.use('/api/compatibility', require('./routes/compatibility'));
+  app.use('/api/auction', require('./routes/auction'));
 
   app.use((req, res) => {
     res.status(404).json({ error: '接口不存在' });
@@ -121,6 +123,13 @@ async function startServer() {
     console.log(`  GET    /api/compatibility/matrix      - 获取某类型批次兼容性矩阵(含推断值)`);
     console.log(`  POST   /api/compatibility/predict     - 预测多批次混合兼容性`);
     console.log(`  GET    /api/compatibility/pair/:a/:b  - 查询两个批次的兼容性`);
+    console.log(`  POST   /api/auction/listings          - 创建拍卖挂单`);
+    console.log(`  GET    /api/auction/listings          - 查询所有open挂单(支持?material_type=过滤)`);
+    console.log(`  GET    /api/auction/listings/:id      - 查询挂单详情`);
+    console.log(`  POST   /api/auction/listings/:id/bid  - 对挂单出价摘单`);
+    console.log(`  POST   /api/auction/listings/:id/accept - 接受某个出价(成交)`);
+    console.log(`  GET    /api/auction/trades            - 查询所有交易记录`);
+    console.log(`  GET    /api/auction/trades/stats      - 交易统计数据`);
     console.log(`\n快速测试命令:`);
     console.log(`  curl -X POST http://localhost:${PORT}/api/batches/plan \\\n    -H "Content-Type: application/json" \\\n    -d '{"formula_id":1,"planned_quantity":500}'`);
     console.log();
@@ -136,8 +145,25 @@ async function startServer() {
       }
     }, 60 * 1000);
 
-    process.on('SIGTERM', () => clearInterval(reservationCleaner));
-    process.on('SIGINT', () => clearInterval(reservationCleaner));
+    const auctionCleaner = setInterval(async () => {
+      try {
+        const result = await AuctionListing.expireListings();
+        if (result.expired_count > 0) {
+          console.log(`[拍卖清理器] 已过期${result.expired_count}条挂单，挂单ID: ${result.expired_listing_ids.join(', ') || '无'}`);
+        }
+      } catch (err) {
+        console.error('[拍卖清理器] 清理失败:', err.message);
+      }
+    }, 60 * 1000);
+
+    process.on('SIGTERM', () => {
+      clearInterval(reservationCleaner);
+      clearInterval(auctionCleaner);
+    });
+    process.on('SIGINT', () => {
+      clearInterval(reservationCleaner);
+      clearInterval(auctionCleaner);
+    });
   });
 }
 
