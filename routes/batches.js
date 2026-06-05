@@ -244,6 +244,7 @@ router.post('/execute', async (req, res) => {
       }
 
       await Reservation.markExecuted(plan.id);
+      await ReservationEvent.create(plan.id, 'executed', operator || 'system');
 
       const productBatchNumber = 'P' + Date.now() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
       

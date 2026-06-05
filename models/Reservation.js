@@ -136,18 +136,10 @@ class Reservation {
   }
 
   static async markExecuted(planId) {
-    await beginTransaction();
-    try {
-      await run(`
-        UPDATE reservations SET status = 'executed'
-        WHERE plan_id = ? AND status = 'active'
-      `, [planId]);
-      await ReservationEvent.create(planId, 'executed', 'system');
-      await commit();
-    } catch (err) {
-      await rollback();
-      throw err;
-    }
+    await run(`
+      UPDATE reservations SET status = 'executed'
+      WHERE plan_id = ? AND status = 'active'
+    `, [planId]);
   }
 
   static async cancelByPlanId(planId, operator = 'system') {
