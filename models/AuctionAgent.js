@@ -121,15 +121,34 @@ class AuctionAgent {
 
   static async getTodayUsed(agent) {
     const today = new Date().toISOString().split('T')[0];
-    const row = await get(`
-      SELECT COALESCE(SUM(at.quantity), 0) as today_used
+
+    const tradedRow = await get(`
+      SELECT COALESCE(SUM(at.quantity), 0) as traded_qty
       FROM auction_trades at
       JOIN auction_bids ab ON at.bid_id = ab.id
-      WHERE ab.agent_id = ?
+      WHERE ab.buyer_line = ?
         AND ab.source = 'auto'
         AND DATE(at.traded_at) = ?
-    `, [agent.id, today]);
-    return row?.today_used || 0;
+        AND EXISTS (
+          SELECT 1 FROM auction_listings al
+          JOIN material_batches mb ON al.batch_id = mb.id
+          WHERE al.id = at.listing_id AND mb.material_type = ?
+        )
+    `, [agent.buyer_line, today, agent.material_type]);
+
+    const pendingRow = await get(`
+      SELECT COALESCE(SUM(al.quantity), 0) as pending_qty
+      FROM auction_bids ab
+      JOIN auction_listings al ON ab.listing_id = al.id
+      JOIN material_batches mb ON al.batch_id = mb.id
+      WHERE ab.buyer_line = ?
+        AND ab.source = 'auto'
+        AND ab.status = 'pending'
+        AND mb.material_type = ?
+        AND DATE(ab.created_at) = ?
+    `, [agent.buyer_line, agent.material_type, today]);
+
+    return (tradedRow?.traded_qty || 0) + (pendingRow?.pending_qty || 0);
   }
 
   static async getQuota(id) {

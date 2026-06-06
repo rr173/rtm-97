@@ -184,6 +184,10 @@ class AuctionListing {
 
     await beginTransaction();
     try {
+      const availableQuantity = await this.getAvailableQuantity(listing.batch_id);
+      if (availableQuantity < listing.quantity) {
+        throw new Error(`源批次可用量不足(已扣除预占/调拨/挂单预占): 当前可用${availableQuantity}kg，需要${listing.quantity}kg`);
+      }
       await run(`
         UPDATE auction_listings SET status = 'sold' WHERE id = ?
       `, [listingId]);
@@ -195,6 +199,11 @@ class AuctionListing {
       await run(`
         UPDATE auction_bids SET status = 'rejected' WHERE listing_id = ? AND id != ? AND status = 'pending'
       `, [listingId, bidId]);
+
+      const cancelledReservations = await Reservation.cancelByBatchId(
+        listing.batch_id,
+        approver
+      );
 
       const transfer = await Transfer._createInternal({
         source_batch_id: listing.batch_id,
@@ -222,7 +231,9 @@ class AuctionListing {
         listing: await this.findById(listingId),
         accepted_bid: await AuctionBid.findById(bidId),
         trade: await AuctionTrade.findById(tradeId),
-        transfer
+        transfer,
+        cancelled_reservation_count: cancelledReservations.cancelled_count,
+        cancelled_plan_ids: cancelledReservations.plans
       };
     } catch (err) {
       await rollback();

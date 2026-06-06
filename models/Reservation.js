@@ -142,6 +142,41 @@ class Reservation {
     `, [planId]);
   }
 
+  static async cancelByBatchId(batchId, operator = 'system') {
+    const reservations = await all(`
+      SELECT DISTINCT plan_id FROM reservations
+      WHERE material_batch_id = ? AND status = 'active'
+    `, [batchId]);
+
+    if (reservations.length === 0) return { cancelled_count: 0, plans: [] };
+
+    const planIds = reservations.map(r => r.plan_id);
+
+    await run(`
+      UPDATE reservations SET status = 'cancelled'
+      WHERE material_batch_id = ? AND status = 'active'
+    `, [batchId]);
+
+    for (const planId of planIds) {
+      await ReservationEvent.create(planId, 'cancelled', operator);
+      await run(`
+        UPDATE batch_plans SET status = 'expired'
+        WHERE id = ? AND status = 'pending'
+      `, [planId]);
+    }
+
+    return { cancelled_count: planIds.length, plans: planIds };
+  }
+
+  static async getActiveReservationsForBatch(batchId) {
+    return await all(`
+      SELECT r.*, bp.plan_uuid, bp.status AS plan_status
+      FROM reservations r
+      JOIN batch_plans bp ON r.plan_id = bp.id
+      WHERE r.material_batch_id = ? AND r.status = 'active'
+    `, [batchId]);
+  }
+
   static async cancelByPlanId(planId, operator = 'system') {
     await beginTransaction();
     try {
